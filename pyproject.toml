@@ -1,0 +1,14 @@
+[project]
+name = "taskq"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "loguru>=0.7.3",
+]
+[tool.uv]
+package = true
+
+[project.scripts]
+taskq = "taskq.main:main"
