@@ -46,7 +46,9 @@ def init_db():
             created_at DATETIME NOT NULL,
             status TEXT NOT NULL,
             environment TEXT,
-            cwd TEXT
+            cwd TEXT,
+            stdout_file TEXT,
+            stderr_file TEXT
         )
         """
     )
@@ -54,7 +56,14 @@ def init_db():
     conn.close()
 
 
-def add_task(name: str, priority: int, environment=None, cwd=None):
+def add_task(
+    name: str,
+    priority: int,
+    environment=None,
+    cwd=None,
+    stdout_file=None,
+    stderr_file=None,
+):
     """
     Add a new task to the database.
 
@@ -68,13 +77,17 @@ def add_task(name: str, priority: int, environment=None, cwd=None):
         Environment variables to serialize and store (optional).
     cwd : str or None
         Working directory to store (optional).
+    stdout_file : str or None
+        Absolute path to stdout log file.
+    stderr_file : str or None
+        Absolute path to stderr log file.
     """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         """
-        INSERT INTO tasks (name, priority, created_at, status, environment, cwd)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO tasks (name, priority, created_at, status, environment, cwd, stdout_file, stderr_file)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name,
@@ -83,15 +96,22 @@ def add_task(name: str, priority: int, environment=None, cwd=None):
             "pending",
             json.dumps(environment) if environment else None,
             cwd,
+            stdout_file,
+            stderr_file,
         ),
     )
     conn.commit()
     conn.close()
 
 
-def get_tasks():
+def get_tasks(status: list = None):
     """
-    Retrieve all tasks from the database, ordered by priority and creation time.
+    Retrieve tasks from the database, optionally filtered by status, ordered by priority and creation time.
+
+    Parameters
+    ----------
+    status : list of str or None
+        List of status values to filter by (e.g., ["pending", "running"]). If None, return all tasks.
 
     Returns
     -------
@@ -101,13 +121,23 @@ def get_tasks():
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
+    if status:
+        placeholders = ",".join("?" for _ in status)
+        query = f"""
+            SELECT id, name, priority, created_at, status, environment, cwd
+            FROM tasks
+            WHERE status IN ({placeholders})
+            ORDER BY priority ASC, created_at ASC
         """
-        SELECT id, name, priority, created_at, status, environment, cwd
-        FROM tasks
-        ORDER BY priority ASC, created_at ASC
-        """
-    )
+        cursor.execute(query, status)
+    else:
+        cursor.execute(
+            """
+            SELECT id, name, priority, created_at, status, environment, cwd
+            FROM tasks
+            ORDER BY priority ASC, created_at ASC
+            """
+        )
     tasks = cursor.fetchall()
     conn.close()
     return tasks

@@ -35,27 +35,85 @@ def cmd_submit(args):
     Parameters
     ----------
     args : argparse.Namespace
-        Parsed command-line arguments with 'name' and 'priority' attributes.
+        Parsed command-line arguments with 'name', 'priority', 'stdout', 'stderr' attributes.
     """
     init_db()
-    add_task(args.name, args.priority, environment=dict(os.environ), cwd=os.getcwd())
-    print(f"Task submitted: {args.name} (priority={args.priority})")
+    cwd = os.getcwd()
+    # Resolve stdout/stderr file paths to absolute paths
+    stdout_file = args.stdout if args.stdout else "stdout.log"
+    stderr_file = args.stderr if args.stderr else "stderr.log"
+    if not os.path.isabs(stdout_file):
+        stdout_file = os.path.abspath(os.path.join(cwd, stdout_file))
+    if not os.path.isabs(stderr_file):
+        stderr_file = os.path.abspath(os.path.join(cwd, stderr_file))
+    # Determine task name
+    task_name = args.name
+    if not task_name:
+        # Use first 12 chars of command + ... if too long
+        task_name = args.command[:12] + ("..." if len(args.command) > 12 else "")
+    add_task(
+        task_name,
+        args.priority,
+        environment=dict(os.environ),
+        cwd=cwd,
+        stdout_file=stdout_file,
+        stderr_file=stderr_file,
+    )
+    print(f"Task submitted: {task_name} (priority={args.priority})")
 
 
 def cmd_list(args):
     """
-    List all tasks in the queue.
+    List all tasks in the queue, optionally filtered by status.
 
     Parameters
     ----------
     args : argparse.Namespace
-        Parsed command-line arguments (unused).
+        Parsed command-line arguments, may include 'status' attribute.
     """
+    from datetime import datetime
+
     init_db()
-    tasks = get_tasks()
-    print("ID | Name | Priority | Created At | Status")
+    allowed_status = {"pending", "running", "completed", "cancelled", "failed"}
+    status = args.status if hasattr(args, "status") and args.status else None
+    if status:
+        invalid = [s for s in status if s not in allowed_status]
+        if invalid:
+            print(f"Invalid status: {', '.join(invalid)}")
+            print(f"Allowed status: {', '.join(sorted(allowed_status))}")
+            return
+    tasks = get_tasks(status)
+    # Table columns: ID, Name, Priority, Date, Time, Status
+    headers = ["ID", "Name", "Priority", "Date", "Time", "Status"]
+    col_widths = [6, 18, 10, 12, 10, 12]
+    # Prepare rows
+    rows = []
     for t in tasks:
-        print(f"{t[0]} | {t[1]} | {t[2]} | {t[3]} | {t[4]}")
+        # t[0]: id, t[1]: name, t[2]: priority, t[3]: created_at, t[4]: status
+        try:
+            dt = datetime.fromisoformat(t[3])
+            date_str = dt.strftime("%Y-%m-%d")
+            time_str = dt.strftime("%H:%M:%S")
+        except Exception:
+            date_str = t[3][:10]
+            time_str = t[3][11:19]
+        name = t[1]
+        if len(name) > col_widths[1]:
+            name = name[: col_widths[1] - 3] + "..."
+        row = [
+            str(t[0]).ljust(col_widths[0]),
+            name.ljust(col_widths[1]),
+            str(t[2]).ljust(col_widths[2]),
+            date_str.ljust(col_widths[3]),
+            time_str.ljust(col_widths[4]),
+            t[4].ljust(col_widths[5]),
+        ]
+        rows.append(row)
+    # Print header
+    print(" ".join(h.ljust(w) for h, w in zip(headers, col_widths)))
+    print("-" * (sum(col_widths) + len(col_widths) - 1))
+    for row in rows:
+        print(" ".join(row))
 
 
 def cmd_cancel(args):
@@ -136,11 +194,45 @@ def main():
     parser_init.set_defaults(func=cmd_init)
 
     parser_submit = subparsers.add_parser("submit", help="Submit a new task")
-    parser_submit.add_argument("name", type=str, help="Task name")
-    parser_submit.add_argument("priority", type=int, help="Task priority (lower is higher)")
+    parser_submit.add_argument("command", type=str, help="Task command to execute")
+    parser_submit.add_argument(
+        "--name",
+        type=str,
+        default=None,
+        help="Task name (default: first 12 chars of command + ... if too long)",
+    )
+    parser_submit.add_argument(
+        "-p",
+        "--priority",
+        type=int,
+        choices=range(0, 10),
+        default=0,
+        help="Task priority (0-9, lower is higher, default: 0)",
+    )
+    parser_submit.add_argument(
+        "--stdout",
+        type=str,
+        default=None,
+        help="Path to stdout log file (default: ./stdout.log in cwd)",
+    )
+    parser_submit.add_argument(
+        "--stderr",
+        type=str,
+        default=None,
+        help="Path to stderr log file (default: ./stderr.log in cwd)",
+    )
     parser_submit.set_defaults(func=cmd_submit)
 
     parser_list = subparsers.add_parser("list", help="List all tasks")
+    parser_list.add_argument(
+        "-s",
+        "--status",
+        action="append",
+        help=(
+            "Filter by task status: pending, running, completed, cancelled, failed. "
+            "Note: can specify multiple"
+        ),
+    )
     parser_list.set_defaults(func=cmd_list)
 
     parser_cancel = subparsers.add_parser("cancel", help="Cancel a task")

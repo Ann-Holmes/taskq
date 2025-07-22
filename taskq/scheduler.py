@@ -81,18 +81,20 @@ def scheduler_loop():
                     print(f"Failed to parse environment/cwd: {e}")
                 # Execute the task command in the restored environment
                 try:
-                    result = subprocess.run(
-                        task[1],
-                        shell=True,
-                        env=env,
-                        cwd=cwd,
-                        capture_output=True,
-                        text=True,
-                        timeout=600,
-                    )
-                    print(f"Task output:\n{result.stdout}")
-                    if result.stderr:
-                        print(f"Task error output:\n{result.stderr}")
+                    # task[7]: stdout_file, task[8]: stderr_file
+                    with open(task[7], "a") as fout, open(task[8], "a") as ferr:
+                        result = subprocess.run(
+                            task[1],
+                            shell=True,
+                            env=env,
+                            cwd=cwd,
+                            stdout=fout,
+                            stderr=ferr,
+                            text=True,
+                            timeout=600,
+                        )
+                    print(f"Task output redirected to: {task[7]}")
+                    print(f"Task error output redirected to: {task[8]}")
                 except Exception as e:
                     print(f"Task execution failed: {e}")
                 update_task_status(task[0], "completed")
