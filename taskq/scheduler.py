@@ -15,7 +15,15 @@ import os
 import json
 import time
 import subprocess
-from .db import init_db, get_tasks, update_task_status, update_task_pid
+from datetime import datetime
+from .db import (
+    init_db,
+    get_tasks,
+    update_task_status,
+    update_task_pid,
+    update_task_start_time,
+    update_task_end_time,
+)
 from .utils import get_taskq_config_dir
 
 SCHEDULER_STATUS_FILE = os.path.join(get_taskq_config_dir(), "scheduler.status")
@@ -62,13 +70,13 @@ def scheduler_loop():
     try:
         while get_scheduler_status() == "running":
             init_db()
-            tasks = get_tasks()
             # Select all pending tasks
-            pending = [t for t in tasks if t[4] == "pending"]
+            pending = get_tasks(status=["pending"])
             if pending:
                 task = pending[0]
                 print(f"Running task {task[0]}: {task[1]}")
                 update_task_status(task[0], "running")
+                update_task_start_time(task[0], datetime.now().isoformat())
                 # Parse environment variables and working directory
                 env = None
                 cwd = None
@@ -93,13 +101,21 @@ def scheduler_loop():
                             text=True,
                         )
                         update_task_pid(task[0], proc.pid)
-                        proc.wait(timeout=600)
+                        # task[10]: timeout
+                        timeout = task[10]
+                        if timeout is None or timeout == 0:
+                            proc.wait()
+                        else:
+                            proc.wait(timeout=timeout)
                     print(f"Task output redirected to: {task[7]}")
                     print(f"Task error output redirected to: {task[8]}")
+                    update_task_status(task[0], "completed")
+                    update_task_end_time(task[0], datetime.now().isoformat())
+                    print(f"Task {task[0]} completed.")
                 except Exception as e:
                     print(f"Task execution failed: {e}")
-                update_task_status(task[0], "completed")
-                print(f"Task {task[0]} completed.")
+                    update_task_status(task[0], "failed")
+                    update_task_end_time(task[0], datetime.now().isoformat())
             else:
                 # No pending tasks, sleep before next poll
                 time.sleep(1)

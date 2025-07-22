@@ -49,7 +49,10 @@ def init_db():
             cwd TEXT,
             stdout_file TEXT,
             stderr_file TEXT,
-            pid INTEGER
+            pid INTEGER,
+            timeout INTEGER,
+            start_time TEXT,
+            end_time TEXT
         )
         """
     )
@@ -64,6 +67,7 @@ def add_task(
     cwd=None,
     stdout_file=None,
     stderr_file=None,
+    timeout=None,
 ):
     """
     Add a new task to the database.
@@ -82,13 +86,15 @@ def add_task(
         Absolute path to stdout log file.
     stderr_file : str or None
         Absolute path to stderr log file.
+    timeout : int or None
+        Timeout in seconds (None or 0 means unlimited).
     """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
         """
-        INSERT INTO tasks (name, priority, created_at, status, environment, cwd, stdout_file, stderr_file)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO tasks (name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, timeout)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name,
@@ -99,6 +105,7 @@ def add_task(
             cwd,
             stdout_file,
             stderr_file,
+            timeout,
         ),
     )
     conn.commit()
@@ -125,7 +132,7 @@ def get_tasks(status: list = None):
     if status:
         placeholders = ",".join("?" for _ in status)
         query = f"""
-            SELECT id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid
+            SELECT id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid, timeout, start_time, end_time
             FROM tasks
             WHERE status IN ({placeholders})
             ORDER BY priority ASC, created_at ASC
@@ -134,7 +141,7 @@ def get_tasks(status: list = None):
     else:
         cursor.execute(
             """
-            SELECT id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid
+            SELECT id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid, timeout, start_time, end_time
             FROM tasks
             ORDER BY priority ASC, created_at ASC
             """
@@ -185,6 +192,52 @@ def update_task_status(task_id: int, status: str):
         UPDATE tasks SET status = ? WHERE id = ?
         """,
         (status, task_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_task_start_time(task_id: int, start_time: str):
+    """
+    Update the start_time of a task.
+
+    Parameters
+    ----------
+    task_id : int
+        Task ID.
+    start_time : str
+        ISO format datetime string.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE tasks SET start_time = ? WHERE id = ?
+        """,
+        (start_time, task_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_task_end_time(task_id: int, end_time: str):
+    """
+    Update the end_time of a task.
+
+    Parameters
+    ----------
+    task_id : int
+        Task ID.
+    end_time : str
+        ISO format datetime string.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE tasks SET end_time = ? WHERE id = ?
+        """,
+        (end_time, task_id),
     )
     conn.commit()
     conn.close()

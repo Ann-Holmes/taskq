@@ -58,6 +58,7 @@ def cmd_submit(args):
         cwd=cwd,
         stdout_file=stdout_file,
         stderr_file=stderr_file,
+        timeout=args.timeout,
     )
     print(f"Task submitted: {task_name} (priority={args.priority})")
 
@@ -84,12 +85,13 @@ def cmd_list(args):
             return
     tasks = get_tasks(status)
     # Table columns: ID, Name, Priority, Date, Time, Status
-    headers = ["ID", "Name", "Priority", "Date", "Time", "Status", "PID"]
-    col_widths = [6, 18, 10, 12, 10, 12, 8]
+    headers = ["ID", "Name", "Priority", "Date", "Time", "Status", "PID", "Duration"]
+    col_widths = [6, 18, 10, 12, 10, 12, 8, 12]
     # Prepare rows
     rows = []
+    now = datetime.now()
     for t in tasks:
-        # t[0]: id, t[1]: name, t[2]: priority, t[3]: created_at, t[4]: status, ..., t[9]: pid
+        # t[0]: id, t[1]: name, t[2]: priority, t[3]: created_at, t[4]: status, ..., t[9]: pid, t[11]: start_time, t[12]: end_time
         try:
             dt = datetime.fromisoformat(t[3])
             date_str = dt.strftime("%Y-%m-%d")
@@ -101,6 +103,20 @@ def cmd_list(args):
         if len(name) > col_widths[1]:
             name = name[: col_widths[1] - 3] + "..."
         pid_str = str(t[9]) if t[9] is not None else "-"
+        # Duration logic
+        duration_str = "-"
+        try:
+            if t[4] == "running" and t[11]:
+                start = datetime.fromisoformat(t[11])
+                duration = now - start
+                duration_str = str(duration).split(".")[0]
+            elif t[4] in ("completed", "failed") and t[11] and t[12]:
+                start = datetime.fromisoformat(t[11])
+                end = datetime.fromisoformat(t[12])
+                duration = end - start
+                duration_str = str(duration).split(".")[0]
+        except Exception:
+            duration_str = "-"
         row = [
             str(t[0]).ljust(col_widths[0]),
             name.ljust(col_widths[1]),
@@ -109,6 +125,7 @@ def cmd_list(args):
             time_str.ljust(col_widths[4]),
             t[4].ljust(col_widths[5]),
             pid_str.ljust(col_widths[6]),
+            duration_str.ljust(col_widths[7]),
         ]
         rows.append(row)
     # Print header
@@ -222,6 +239,12 @@ def main():
         type=str,
         default=None,
         help="Path to stderr log file (default: ./stderr.log in cwd)",
+    )
+    parser_submit.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Timeout for this task in seconds (default: unlimited)",
     )
     parser_submit.set_defaults(func=cmd_submit)
 
