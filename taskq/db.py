@@ -1,67 +1,35 @@
 """
 db.py
 
-TaskQ database module.
+TaskQ database module (SQLAlchemy ORM version).
 
 Implements all database operations for the task queue, including initialization,
-task creation, status updates, and task retrieval. Uses SQLite as the backend.
+task creation, status updates, and task retrieval. Uses SQLAlchemy ORM.
 
 Author: ender
 """
 
 import os
-import sqlite3
 from datetime import datetime
-import json
 from .utils import get_taskq_config_dir
+from .models import Task, get_session
 
 DB_PATH = os.path.join(get_taskq_config_dir(), "taskq.db")
 
 
-def get_connection():
-    """
-    Create and return a new SQLite connection.
-
-    Returns
-    -------
-    sqlite3.Connection
-        SQLite connection object.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    return conn
-
-
 def init_db():
     """
-    Initialize the tasks table in the database if it does not exist.
+    Initialize the database and create tables if not exist.
+
+    This function ensures the database schema is up-to-date.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            priority INTEGER NOT NULL,
-            created_at DATETIME NOT NULL,
-            status TEXT NOT NULL,
-            environment TEXT,
-            cwd TEXT,
-            stdout_file TEXT,
-            stderr_file TEXT,
-            pid INTEGER,
-            timeout INTEGER,
-            start_time TEXT,
-            end_time TEXT
-        )
-        """
-    )
-    conn.commit()
-    conn.close()
+    # SQLAlchemy自动建表，无需手写DDL
+    get_session(DB_PATH).close()
 
 
 def add_task(
     name: str,
+    command: str,
     priority: int,
     environment=None,
     cwd=None,
@@ -75,7 +43,9 @@ def add_task(
     Parameters
     ----------
     name : str
-        Task name or command to execute.
+        Task name for display.
+    command : str
+        The actual shell command to execute.
     priority : int
         Task priority (lower value means higher priority).
     environment : dict or None
@@ -89,27 +59,23 @@ def add_task(
     timeout : int or None
         Timeout in seconds (None or 0 means unlimited).
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO tasks (name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, timeout)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            name,
-            priority,
-            datetime.now().isoformat(),
-            "pending",
-            json.dumps(environment) if environment else None,
-            cwd,
-            stdout_file,
-            stderr_file,
-            timeout,
-        ),
+    session = get_session(DB_PATH)
+    task = Task(
+        name=name,
+        command=command,
+        priority=priority,
+        created_at=datetime.now(),
+        status="pending",
+        environment=environment if environment is not None else {},
+        cwd=cwd,
+        stdout_file=stdout_file,
+        stderr_file=stderr_file,
+        timeout=timeout,
     )
-    conn.commit()
-    conn.close()
+    session.add(task)
+    session.commit()
+    session.close()
+    return task
 
 
 def get_tasks(status: list = None):
@@ -123,124 +89,17 @@ def get_tasks(status: list = None):
 
     Returns
     -------
-    list of tuple
-        List of task records, each as a tuple:
-        (id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid)
+    list of Task
+        List of Task ORM objects.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
+    session = get_session(DB_PATH)
+    q = session.query(Task)
     if status:
-        placeholders = ",".join("?" for _ in status)
-        query = f"""
-            SELECT id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid, timeout, start_time, end_time
-            FROM tasks
-            WHERE status IN ({placeholders})
-            ORDER BY priority ASC, created_at ASC
-        """
-        cursor.execute(query, status)
-    else:
-        cursor.execute(
-            """
-            SELECT id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid, timeout, start_time, end_time
-            FROM tasks
-            ORDER BY priority ASC, created_at ASC
-            """
-        )
-    tasks = cursor.fetchall()
-    conn.close()
+        q = q.filter(Task.status.in_(status))
+    q = q.order_by(Task.priority.asc(), Task.created_at.asc())
+    tasks = q.all()
+    session.close()
     return tasks
-
-
-def update_task_pid(task_id: int, pid: int):
-    """
-    Update the pid of a task.
-
-    Parameters
-    ----------
-    task_id : int
-        Task ID.
-    pid : int
-        Process ID to record.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        UPDATE tasks SET pid = ? WHERE id = ?
-        """,
-        (pid, task_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-def update_task_status(task_id: int, status: str):
-    """
-    Update the status of a task.
-
-    Parameters
-    ----------
-    task_id : int
-        Task ID.
-    status : str
-        New status ('pending', 'running', 'completed', 'cancelled').
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        UPDATE tasks SET status = ? WHERE id = ?
-        """,
-        (status, task_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-def update_task_start_time(task_id: int, start_time: str):
-    """
-    Update the start_time of a task.
-
-    Parameters
-    ----------
-    task_id : int
-        Task ID.
-    start_time : str
-        ISO format datetime string.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        UPDATE tasks SET start_time = ? WHERE id = ?
-        """,
-        (start_time, task_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-def update_task_end_time(task_id: int, end_time: str):
-    """
-    Update the end_time of a task.
-
-    Parameters
-    ----------
-    task_id : int
-        Task ID.
-    end_time : str
-        ISO format datetime string.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        UPDATE tasks SET end_time = ? WHERE id = ?
-        """,
-        (end_time, task_id),
-    )
-    conn.commit()
-    conn.close()
 
 
 def get_task_by_id(task_id: int):
@@ -254,20 +113,86 @@ def get_task_by_id(task_id: int):
 
     Returns
     -------
-    tuple or None
-        Task record as a tuple, or None if not found.
-        (id, name, priority, created_at, status, environment, cwd)
+    Task or None
+        Task ORM object, or None if not found.
     """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT id, name, priority, created_at, status, environment, cwd
-        FROM tasks
-        WHERE id = ?
-        """,
-        (task_id,),
-    )
-    task = cursor.fetchone()
-    conn.close()
-    return task
+    session = get_session(DB_PATH)
+    t = session.query(Task).filter(Task.id == task_id).first()
+    session.close()
+    return t
+
+
+def update_task_status(task_id: int, status: str):
+    """
+    Update the status of a task.
+
+    Parameters
+    ----------
+    task_id : int
+        Task ID.
+    status : str
+        New status ('pending', 'running', 'completed', 'cancelled', 'failed').
+    """
+    session = get_session(DB_PATH)
+    t = session.query(Task).filter(Task.id == task_id).first()
+    if t:
+        t.status = status
+        session.commit()
+    session.close()
+
+
+def update_task_pid(task_id: int, pid: int):
+    """
+    Update the pid of a task.
+
+    Parameters
+    ----------
+    task_id : int
+        Task ID.
+    pid : int
+        Process ID to record.
+    """
+    session = get_session(DB_PATH)
+    t = session.query(Task).filter(Task.id == task_id).first()
+    if t:
+        t.pid = pid
+        session.commit()
+    session.close()
+
+
+def update_task_start_time(task_id: int, start_time: str):
+    """
+    Update the start_time of a task.
+
+    Parameters
+    ----------
+    task_id : int
+        Task ID.
+    start_time : str
+        ISO format datetime string.
+    """
+    session = get_session(DB_PATH)
+    t = session.query(Task).filter(Task.id == task_id).first()
+    if t:
+        t.start_time = datetime.fromisoformat(start_time)
+        session.commit()
+    session.close()
+
+
+def update_task_end_time(task_id: int, end_time: str):
+    """
+    Update the end_time of a task.
+
+    Parameters
+    ----------
+    task_id : int
+        Task ID.
+    end_time : str
+        ISO format datetime string.
+    """
+    session = get_session(DB_PATH)
+    t = session.query(Task).filter(Task.id == task_id).first()
+    if t:
+        t.end_time = datetime.fromisoformat(end_time)
+        session.commit()
+    session.close()

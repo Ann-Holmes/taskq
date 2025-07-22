@@ -3,21 +3,31 @@ main.py
 
 TaskQ command-line interface module.
 
-Provides CLI commands for initializing the database, submitting, listing,
-cancelling tasks, and controlling the scheduler. All commands are accessible
-via the 'taskq' CLI entry point.
+This module provides the main CLI entry point for TaskQ, including commands for:
+- Initializing the database
+- Submitting new tasks
+- Listing tasks with filtering and formatting
+- Cancelling tasks (with process termination)
+- Starting/stopping the scheduler
+- Querying scheduler status
+
+All commands are accessible via the 'taskq' CLI entry point.
 
 Author: ender
 """
 
 import argparse
+import signal
 import os
 from .db import init_db, add_task, get_tasks
+from .utils import resolve_path, validate_priority, validate_timeout
 
 
 def cmd_init(args):
     """
     Initialize the task database.
+
+    This command ensures the database schema is up-to-date and ready for use.
 
     Parameters
     ----------
@@ -32,40 +42,60 @@ def cmd_submit(args):
     """
     Submit a new task to the queue.
 
+    This command validates input parameters, resolves file paths, and creates a new task
+    in the database with all required metadata. If validation fails, an error is printed.
+
     Parameters
     ----------
     args : argparse.Namespace
         Parsed command-line arguments with 'name', 'priority', 'stdout', 'stderr' attributes.
     """
-    init_db()
-    cwd = os.getcwd()
-    # Resolve stdout/stderr file paths to absolute paths
-    stdout_file = args.stdout if args.stdout else "stdout.log"
-    stderr_file = args.stderr if args.stderr else "stderr.log"
-    if not os.path.isabs(stdout_file):
-        stdout_file = os.path.abspath(os.path.join(cwd, stdout_file))
-    if not os.path.isabs(stderr_file):
-        stderr_file = os.path.abspath(os.path.join(cwd, stderr_file))
-    # Determine task name
-    task_name = args.name
-    if not task_name:
-        # Use first 12 chars of command + ... if too long
-        task_name = args.command[:12] + ("..." if len(args.command) > 12 else "")
-    add_task(
-        task_name,
-        args.priority,
-        environment=dict(os.environ),
-        cwd=cwd,
-        stdout_file=stdout_file,
-        stderr_file=stderr_file,
-        timeout=args.timeout,
-    )
-    print(f"Task submitted: {task_name} (priority={args.priority})")
+    try:
+        init_db()
+        cwd = os.getcwd()
+        # Validate and resolve stdout/stderr file paths
+        stdout_file = args.stdout if args.stdout else "stdout.log"
+        stderr_file = args.stderr if args.stderr else "stderr.log"
+        if not isinstance(stdout_file, str) or not isinstance(stderr_file, str):
+            print("Error: stdout and stderr file paths must be strings.")
+            return
+        stdout_file = resolve_path(stdout_file, cwd)
+        stderr_file = resolve_path(stderr_file, cwd)
+        # Validate priority
+        if not validate_priority(args.priority):
+            print("Error: priority must be between 0 and 9.")
+            return
+        # Validate timeout
+        if not validate_timeout(args.timeout):
+            print("Error: timeout must be a non-negative integer or None.")
+            return
+        # Determine task name
+        task_name = args.name
+        if not task_name:
+            # Use first 12 chars of command + ... if too long
+            task_name = args.command[:12] + ("..." if len(args.command) > 12 else "")
+        add_task(
+            task_name,
+            args.command,
+            args.priority,
+            environment=dict(os.environ),
+            cwd=cwd,
+            stdout_file=stdout_file,
+            stderr_file=stderr_file,
+            timeout=args.timeout,
+        )
+        print(f"Task submitted: {task_name} (priority={args.priority})")
+    except Exception as e:
+        print(f"Failed to submit task: {e}")
 
 
 def cmd_list(args):
     """
     List all tasks in the queue, optionally filtered by status.
+
+    This command retrieves all tasks from the database (optionally filtered by status),
+    formats them as a table, and prints to the console. Duration is calculated for running
+    and completed/failed tasks.
 
     Parameters
     ----------
@@ -84,46 +114,46 @@ def cmd_list(args):
             print(f"Allowed status: {', '.join(sorted(allowed_status))}")
             return
     tasks = get_tasks(status)
-    # Table columns: ID, Name, Priority, Date, Time, Status
+    # Table columns: ID, Name, Priority, Date, Time, Status, PID, Duration
     headers = ["ID", "Name", "Priority", "Date", "Time", "Status", "PID", "Duration"]
     col_widths = [6, 18, 10, 12, 10, 12, 8, 12]
     # Prepare rows
     rows = []
     now = datetime.now()
     for t in tasks:
-        # t[0]: id, t[1]: name, t[2]: priority, t[3]: created_at, t[4]: status, ..., t[9]: pid, t[11]: start_time, t[12]: end_time
+        # t: Task ORM object
         try:
-            dt = datetime.fromisoformat(t[3])
+            dt = t.created_at
             date_str = dt.strftime("%Y-%m-%d")
             time_str = dt.strftime("%H:%M:%S")
         except Exception:
-            date_str = t[3][:10]
-            time_str = t[3][11:19]
-        name = t[1]
+            date_str = str(t.created_at)[:10]
+            time_str = str(t.created_at)[11:19]
+        name = t.name
         if len(name) > col_widths[1]:
             name = name[: col_widths[1] - 3] + "..."
-        pid_str = str(t[9]) if t[9] is not None else "-"
+        pid_str = str(t.pid) if t.pid is not None else "-"
         # Duration logic
         duration_str = "-"
         try:
-            if t[4] == "running" and t[11]:
-                start = datetime.fromisoformat(t[11])
+            if t.status == "running" and t.start_time:
+                start = t.start_time
                 duration = now - start
                 duration_str = str(duration).split(".")[0]
-            elif t[4] in ("completed", "failed") and t[11] and t[12]:
-                start = datetime.fromisoformat(t[11])
-                end = datetime.fromisoformat(t[12])
+            elif t.status in ("completed", "failed") and t.start_time and t.end_time:
+                start = t.start_time
+                end = t.end_time
                 duration = end - start
                 duration_str = str(duration).split(".")[0]
         except Exception:
             duration_str = "-"
         row = [
-            str(t[0]).ljust(col_widths[0]),
+            str(t.id).ljust(col_widths[0]),
             name.ljust(col_widths[1]),
-            str(t[2]).ljust(col_widths[2]),
+            str(t.priority).ljust(col_widths[2]),
             date_str.ljust(col_widths[3]),
             time_str.ljust(col_widths[4]),
-            t[4].ljust(col_widths[5]),
+            t.status.ljust(col_widths[5]),
             pid_str.ljust(col_widths[6]),
             duration_str.ljust(col_widths[7]),
         ]
@@ -139,6 +169,9 @@ def cmd_cancel(args):
     """
     Cancel a pending or running task by ID.
 
+    This command cancels a task by updating its status in the database. If the task is
+    currently running and has a valid PID, it will attempt to send SIGTERM to the process.
+
     Parameters
     ----------
     args : argparse.Namespace
@@ -151,9 +184,17 @@ def cmd_cancel(args):
     if not task:
         print(f"Task {args.id} not found.")
         return
-    if task[4] not in ("pending", "running"):
-        print(f"Task {args.id} cannot be cancelled (status: {task[4]}).")
+    # Use ORM attribute access
+    if task.status not in ("pending", "running"):
+        print(f"Task {args.id} cannot be cancelled (status: {task.status}).")
         return
+    # If running, try to terminate the process
+    if task.status == "running" and task.pid:
+        try:
+            os.kill(task.pid, signal.SIGTERM)
+            print(f"Sent SIGTERM to process {task.pid}.")
+        except Exception as e:
+            print(f"Failed to terminate process {task.pid}: {e}")
     update_task_status(args.id, "cancelled")
     print(f"Task {args.id} cancelled.")
 

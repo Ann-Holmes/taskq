@@ -74,25 +74,35 @@ def scheduler_loop():
             pending = get_tasks(status=["pending"])
             if pending:
                 task = pending[0]
-                print(f"Running task {task[0]}: {task[1]}")
-                update_task_status(task[0], "running")
-                update_task_start_time(task[0], datetime.now().isoformat())
-                # Parse environment variables and working directory
+                print(f"Running task {task.id}: {task.name}")
+                try:
+                    update_task_status(task.id, "running")
+                    update_task_start_time(task.id, datetime.now().isoformat())
+                except Exception as e:
+                    print(f"Failed to update task status/start_time: {e}")
+                    return
+                # Prepare environment and cwd
                 env = None
                 cwd = None
                 try:
-                    if task[5]:
-                        env = json.loads(task[5])
-                    if task[6]:
-                        cwd = task[6]
+                    if task.environment is not None:
+                        if not isinstance(task.environment, dict):
+                            raise ValueError("Task environment must be a dict.")
+                        env = task.environment
+                    if task.cwd:
+                        if not os.path.isdir(task.cwd):
+                            raise ValueError(f"Working directory does not exist: {task.cwd}")
+                        cwd = task.cwd
                 except Exception as e:
                     print(f"Failed to parse environment/cwd: {e}")
+                    update_task_status(task.id, "failed")
+                    update_task_end_time(task.id, datetime.now().isoformat())
+                    return
                 # Execute the task command in the restored environment
                 try:
-                    # task[7]: stdout_file, task[8]: stderr_file
-                    with open(task[7], "a") as fout, open(task[8], "a") as ferr:
+                    with open(task.stdout_file, "a") as fout, open(task.stderr_file, "a") as ferr:
                         proc = subprocess.Popen(
-                            task[1],
+                            task.command,
                             shell=True,
                             env=env,
                             cwd=cwd,
@@ -100,22 +110,21 @@ def scheduler_loop():
                             stderr=ferr,
                             text=True,
                         )
-                        update_task_pid(task[0], proc.pid)
-                        # task[10]: timeout
-                        timeout = task[10]
+                        update_task_pid(task.id, proc.pid)
+                        timeout = task.timeout
                         if timeout is None or timeout == 0:
                             proc.wait()
                         else:
                             proc.wait(timeout=timeout)
-                    print(f"Task output redirected to: {task[7]}")
-                    print(f"Task error output redirected to: {task[8]}")
-                    update_task_status(task[0], "completed")
-                    update_task_end_time(task[0], datetime.now().isoformat())
-                    print(f"Task {task[0]} completed.")
+                    print(f"Task output redirected to: {task.stdout_file}")
+                    print(f"Task error output redirected to: {task.stderr_file}")
+                    update_task_status(task.id, "completed")
+                    update_task_end_time(task.id, datetime.now().isoformat())
+                    print(f"Task {task.id} completed.")
                 except Exception as e:
                     print(f"Task execution failed: {e}")
-                    update_task_status(task[0], "failed")
-                    update_task_end_time(task[0], datetime.now().isoformat())
+                    update_task_status(task.id, "failed")
+                    update_task_end_time(task.id, datetime.now().isoformat())
             else:
                 # No pending tasks, sleep before next poll
                 time.sleep(1)

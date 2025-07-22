@@ -22,3 +22,58 @@ def get_taskq_config_dir():
     if not os.path.exists(home):
         os.makedirs(home, exist_ok=True)
     return home
+
+
+def resolve_path(path, cwd=None):
+    """
+    Resolve a file path to absolute, using cwd as base if relative.
+
+    Parameters
+    ----------
+    path : str
+        The file path to resolve.
+    cwd : str or None
+        The base directory for relative paths. If None, uses os.getcwd().
+
+    Returns
+    -------
+    str
+        Absolute file path.
+    """
+    if os.path.isabs(path):
+        return path
+    if cwd is None:
+        cwd = os.getcwd()
+    return os.path.abspath(os.path.join(cwd, path))
+
+
+def validate_priority(priority):
+    """
+    Validate task priority.
+
+    Parameters
+    ----------
+    priority : int
+
+    Returns
+    -------
+    bool
+        True if valid, False otherwise.
+    """
+    return isinstance(priority, int) and 0 <= priority <= 9
+
+
+def validate_timeout(timeout):
+    """
+    Validate task timeout.
+
+    Parameters
+    ----------
+    timeout : int or None
+
+    Returns
+    -------
+    bool
+        True if valid, False otherwise.
+    """
+    return timeout is None or (isinstance(timeout, int) and timeout >= 0)
