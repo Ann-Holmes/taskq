@@ -48,7 +48,8 @@ def init_db():
             environment TEXT,
             cwd TEXT,
             stdout_file TEXT,
-            stderr_file TEXT
+            stderr_file TEXT,
+            pid INTEGER
         )
         """
     )
@@ -117,14 +118,14 @@ def get_tasks(status: list = None):
     -------
     list of tuple
         List of task records, each as a tuple:
-        (id, name, priority, created_at, status, environment, cwd)
+        (id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid)
     """
     conn = get_connection()
     cursor = conn.cursor()
     if status:
         placeholders = ",".join("?" for _ in status)
         query = f"""
-            SELECT id, name, priority, created_at, status, environment, cwd
+            SELECT id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid
             FROM tasks
             WHERE status IN ({placeholders})
             ORDER BY priority ASC, created_at ASC
@@ -133,7 +134,7 @@ def get_tasks(status: list = None):
     else:
         cursor.execute(
             """
-            SELECT id, name, priority, created_at, status, environment, cwd
+            SELECT id, name, priority, created_at, status, environment, cwd, stdout_file, stderr_file, pid
             FROM tasks
             ORDER BY priority ASC, created_at ASC
             """
@@ -141,6 +142,29 @@ def get_tasks(status: list = None):
     tasks = cursor.fetchall()
     conn.close()
     return tasks
+
+
+def update_task_pid(task_id: int, pid: int):
+    """
+    Update the pid of a task.
+
+    Parameters
+    ----------
+    task_id : int
+        Task ID.
+    pid : int
+        Process ID to record.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE tasks SET pid = ? WHERE id = ?
+        """,
+        (pid, task_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def update_task_status(task_id: int, status: str):

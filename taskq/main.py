@@ -84,12 +84,12 @@ def cmd_list(args):
             return
     tasks = get_tasks(status)
     # Table columns: ID, Name, Priority, Date, Time, Status
-    headers = ["ID", "Name", "Priority", "Date", "Time", "Status"]
-    col_widths = [6, 18, 10, 12, 10, 12]
+    headers = ["ID", "Name", "Priority", "Date", "Time", "Status", "PID"]
+    col_widths = [6, 18, 10, 12, 10, 12, 8]
     # Prepare rows
     rows = []
     for t in tasks:
-        # t[0]: id, t[1]: name, t[2]: priority, t[3]: created_at, t[4]: status
+        # t[0]: id, t[1]: name, t[2]: priority, t[3]: created_at, t[4]: status, ..., t[9]: pid
         try:
             dt = datetime.fromisoformat(t[3])
             date_str = dt.strftime("%Y-%m-%d")
@@ -100,6 +100,7 @@ def cmd_list(args):
         name = t[1]
         if len(name) > col_widths[1]:
             name = name[: col_widths[1] - 3] + "..."
+        pid_str = str(t[9]) if t[9] is not None else "-"
         row = [
             str(t[0]).ljust(col_widths[0]),
             name.ljust(col_widths[1]),
@@ -107,6 +108,7 @@ def cmd_list(args):
             date_str.ljust(col_widths[3]),
             time_str.ljust(col_widths[4]),
             t[4].ljust(col_widths[5]),
+            pid_str.ljust(col_widths[6]),
         ]
         rows.append(row)
     # Print header

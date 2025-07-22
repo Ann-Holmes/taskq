@@ -15,7 +15,7 @@ import os
 import json
 import time
 import subprocess
-from .db import get_tasks, update_task_status, init_db
+from .db import init_db, get_tasks, update_task_status, update_task_pid
 from .utils import get_taskq_config_dir
 
 SCHEDULER_STATUS_FILE = os.path.join(get_taskq_config_dir(), "scheduler.status")
@@ -83,7 +83,7 @@ def scheduler_loop():
                 try:
                     # task[7]: stdout_file, task[8]: stderr_file
                     with open(task[7], "a") as fout, open(task[8], "a") as ferr:
-                        result = subprocess.run(
+                        proc = subprocess.Popen(
                             task[1],
                             shell=True,
                             env=env,
@@ -91,8 +91,9 @@ def scheduler_loop():
                             stdout=fout,
                             stderr=ferr,
                             text=True,
-                            timeout=600,
                         )
+                        update_task_pid(task[0], proc.pid)
+                        proc.wait(timeout=600)
                     print(f"Task output redirected to: {task[7]}")
                     print(f"Task error output redirected to: {task[8]}")
                 except Exception as e:
