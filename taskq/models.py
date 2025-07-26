@@ -65,6 +65,20 @@ class Task(Base):
     start_time = Column(DateTime, nullable=True)  # Start time
     end_time = Column(DateTime, nullable=True)  # End time
 
+    def __str__(self):
+        """
+        String representation of the Task object.
+
+        Returns
+        -------
+        str
+            Formatted string with task details.
+        """
+        return (
+            f"Task(id={self.id}, name='{self.name}', priority={self.priority}, "
+            f"status='{self.status}', created_at={self.created_at})"
+        )
+
 
 def get_engine(db_path):
     """

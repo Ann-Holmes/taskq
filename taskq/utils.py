@@ -88,6 +88,7 @@ def setup_logging():
     """
     log_dir = get_taskq_config_dir()
     log_file = os.path.join(log_dir, "taskq.log")
+    logger.remove()
     logger.add(
         log_file, rotation="10 MB", retention=5, level="DEBUG", format="{time} {level} {message}"
     )

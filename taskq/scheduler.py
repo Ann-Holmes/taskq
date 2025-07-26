@@ -58,10 +58,12 @@ def get_scheduler_status():
         The current status ('running' or 'stopped').
     """
     if not os.path.exists(SCHEDULER_STATUS_FILE):
+        print("Scheduler status file not found. Returning 'stopped'.")
         logger.info("Scheduler status file not found. Returning 'stopped'.")
         return "stopped"
     with open(SCHEDULER_STATUS_FILE, "r") as f:
         status = f.read().strip()
+        print(f"Retrieved scheduler status: {status}")
         logger.info(f"Retrieved scheduler status: {status}")
         return status
 
@@ -75,6 +77,7 @@ def scheduler_loop():
     The loop runs until the scheduler status is set to 'stopped'.
     """
     set_scheduler_status("running")
+    print("Scheduler started.")
     logger.info("Scheduler started.")
     # Dynamically adjust max_workers based on system load
     max_workers = 2 if is_system_overloaded() else 5
@@ -155,6 +158,7 @@ def start_scheduler():
     Runs the scheduling loop in the foreground.
     """
     if get_scheduler_status() == "running":
+        print("Scheduler is already running.")
         logger.info("Scheduler already running.")
         return
     scheduler_loop()
@@ -165,10 +169,12 @@ def stop_scheduler():
     Stop the scheduler by setting its status to 'stopped'.
     """
     if get_scheduler_status() != "running":
+        print("Scheduler is not running.")
         logger.info("Scheduler is not running.")
         return
     set_scheduler_status("stopped")
-    logger.info("Stopping scheduler...")
+    print("Scheduler stopped.")
+    logger.info("Scheduler stopped.")
 
 
 def status_scheduler():
@@ -176,4 +182,5 @@ def status_scheduler():
     Print the current scheduler status.
     """
     status = get_scheduler_status()
+    print(f"Scheduler status: {status}")
     logger.info(f"Scheduler status: {status}")
