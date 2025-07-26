@@ -86,12 +86,14 @@ def add_task(
 
 def get_tasks(status: list = None):
     """
-    Retrieve tasks from the database, optionally filtered by status, ordered by priority and creation time.
+    Retrieve tasks from the database, optionally filtered by status, ordered by priority and
+    creation time.
 
     Parameters
     ----------
     status : list of str or None
-        List of status values to filter by (e.g., ["pending", "running"]). If None, return all tasks.
+        List of status values to filter by (e.g., ["pending", "running"]). If None, return all
+        tasks.
 
     Returns
     -------
