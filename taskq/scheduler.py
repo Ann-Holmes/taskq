@@ -14,6 +14,8 @@ Author: ender
 import os
 import time
 import subprocess
+from .resources import is_system_overloaded
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from .db import (
     init_db,
@@ -74,70 +76,68 @@ def scheduler_loop():
     """
     set_scheduler_status("running")
     logger.info("Scheduler started.")
+    executor = ProcessPoolExecutor(max_workers=5)  # Maximum parallel tasks
     try:
         while get_scheduler_status() == "running":
             init_db()
             # Select all pending tasks
             pending = get_tasks(status=["pending"])
+            if is_system_overloaded():
+                logger.info("System is overloaded. Pausing task scheduling.")
+                time.sleep(30)  # Wait before next poll, because system is overloaded
+                continue
+
             if pending:
-                task = pending[0]
-                logger.info(f"Running task {task.id}: {task.name}")
-                try:
-                    update_task_status(task.id, "running")
-                    update_task_start_time(task.id, datetime.now().isoformat())
-                except Exception as e:
-                    logger.error(f"Failed to update task status/start_time: {e}")
-                    return
-                # Prepare environment and cwd
-                env = None
-                cwd = None
-                try:
-                    if task.environment is not None:
-                        if not isinstance(task.environment, dict):
-                            raise ValueError("Task environment must be a dict.")
-                        env = task.environment
-                    if task.cwd:
-                        if not os.path.isdir(task.cwd):
-                            raise ValueError(f"Working directory does not exist: {task.cwd}")
-                        cwd = task.cwd
-                except Exception as e:
-                    logger.error(f"Failed to parse environment/cwd: {e}")
-                    update_task_status(task.id, "failed")
-                    update_task_end_time(task.id, datetime.now().isoformat())
-                    return
-                # Execute the task command in the restored environment
-                try:
-                    with open(task.stdout_file, "a") as fout, open(task.stderr_file, "a") as ferr:
-                        proc = subprocess.Popen(
-                            task.command,
-                            shell=True,
-                            env=env,
-                            cwd=cwd,
-                            stdout=fout,
-                            stderr=ferr,
-                            text=True,
-                        )
-                        update_task_pid(task.id, proc.pid)
-                        timeout = task.timeout
-                        if timeout is None or timeout == 0:
-                            proc.wait()
-                        else:
-                            proc.wait(timeout=timeout)
-                    logger.info(f"Task output redirected to: {task.stdout_file}")
-                    logger.info(f"Task error output redirected to: {task.stderr_file}")
-                    update_task_status(task.id, "completed")
-                    update_task_end_time(task.id, datetime.now().isoformat())
-                    logger.info(f"Task {task.id} completed.")
-                except Exception as e:
-                    logger.error(f"Task execution failed: {e}")
-                    update_task_status(task.id, "failed")
-                    update_task_end_time(task.id, datetime.now().isoformat())
+                for task in pending[:5]:  # Limit to 5 tasks at a time
+                    logger.info(f"Submitting task {task.id}: {task.name}")
+                    executor.submit(execute_task, task)
+                    time.sleep(10)  # Wait for task initialization
             else:
                 # No pending tasks, sleep before next poll
-                time.sleep(1)
+                time.sleep(5)
     finally:
+        executor.shutdown(wait=True)
         set_scheduler_status("stopped")
         logger.info("Scheduler stopped.")
+
+
+def execute_task(task):
+    """
+    Execute a single task in a separate process.
+
+    Parameters
+    ----------
+    task : Task
+        The task object to execute.
+    """
+    try:
+        update_task_status(task.id, "running")
+        update_task_start_time(task.id, datetime.now().isoformat())
+        env = task.environment if isinstance(task.environment, dict) else None
+        cwd = task.cwd if task.cwd and os.path.isdir(task.cwd) else None
+        with open(task.stdout_file, "a") as fout, open(task.stderr_file, "a") as ferr:
+            proc = subprocess.Popen(
+                task.command,
+                shell=True,
+                env=env,
+                cwd=cwd,
+                stdout=fout,
+                stderr=ferr,
+                text=True,
+            )
+            update_task_pid(task.id, proc.pid)
+            timeout = task.timeout
+            if timeout is None or timeout == 0:
+                proc.wait()
+            else:
+                proc.wait(timeout=timeout)
+        update_task_status(task.id, "completed")
+        update_task_end_time(task.id, datetime.now().isoformat())
+        logger.info(f"Task {task.id} completed.")
+    except Exception as e:
+        logger.error(f"Task execution failed: {e}")
+        update_task_status(task.id, "failed")
+        update_task_end_time(task.id, datetime.now().isoformat())
 
 
 def start_scheduler():
