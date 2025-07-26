@@ -7,6 +7,7 @@ Author: ender
 """
 
 import os
+from loguru import logger
 
 
 def get_taskq_config_dir():
@@ -77,3 +78,16 @@ def validate_timeout(timeout):
         True if valid, False otherwise.
     """
     return timeout is None or (isinstance(timeout, int) and timeout >= 0)
+
+
+def setup_logging():
+    """
+    Configure the loguru logger to write logs to the ~/.taskq/taskq.log file.
+
+    Logs are rotated when they reach 10MB, and the last 5 log files are retained.
+    """
+    log_dir = get_taskq_config_dir()
+    log_file = os.path.join(log_dir, "taskq.log")
+    logger.add(
+        log_file, rotation="10 MB", retention=5, level="DEBUG", format="{time} {level} {message}"
+    )

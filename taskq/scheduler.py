@@ -12,7 +12,6 @@ Author: ender
 """
 
 import os
-import json
 import time
 import subprocess
 from datetime import datetime
@@ -24,9 +23,13 @@ from .db import (
     update_task_start_time,
     update_task_end_time,
 )
-from .utils import get_taskq_config_dir
+from .utils import get_taskq_config_dir, setup_logging
+from loguru import logger
 
 SCHEDULER_STATUS_FILE = os.path.join(get_taskq_config_dir(), "scheduler.status")
+
+# Initialize logging
+setup_logging()
 
 
 def set_scheduler_status(status: str):
@@ -38,6 +41,7 @@ def set_scheduler_status(status: str):
     status : str
         The status to set ('running' or 'stopped').
     """
+    logger.info(f"Setting scheduler status to {status}")
     with open(SCHEDULER_STATUS_FILE, "w") as f:
         f.write(status)
 
@@ -52,9 +56,12 @@ def get_scheduler_status():
         The current status ('running' or 'stopped').
     """
     if not os.path.exists(SCHEDULER_STATUS_FILE):
+        logger.info("Scheduler status file not found. Returning 'stopped'.")
         return "stopped"
     with open(SCHEDULER_STATUS_FILE, "r") as f:
-        return f.read().strip()
+        status = f.read().strip()
+        logger.info(f"Retrieved scheduler status: {status}")
+        return status
 
 
 def scheduler_loop():
@@ -66,7 +73,7 @@ def scheduler_loop():
     The loop runs until the scheduler status is set to 'stopped'.
     """
     set_scheduler_status("running")
-    print("Scheduler started.")
+    logger.info("Scheduler started.")
     try:
         while get_scheduler_status() == "running":
             init_db()
@@ -74,12 +81,12 @@ def scheduler_loop():
             pending = get_tasks(status=["pending"])
             if pending:
                 task = pending[0]
-                print(f"Running task {task.id}: {task.name}")
+                logger.info(f"Running task {task.id}: {task.name}")
                 try:
                     update_task_status(task.id, "running")
                     update_task_start_time(task.id, datetime.now().isoformat())
                 except Exception as e:
-                    print(f"Failed to update task status/start_time: {e}")
+                    logger.error(f"Failed to update task status/start_time: {e}")
                     return
                 # Prepare environment and cwd
                 env = None
@@ -94,7 +101,7 @@ def scheduler_loop():
                             raise ValueError(f"Working directory does not exist: {task.cwd}")
                         cwd = task.cwd
                 except Exception as e:
-                    print(f"Failed to parse environment/cwd: {e}")
+                    logger.error(f"Failed to parse environment/cwd: {e}")
                     update_task_status(task.id, "failed")
                     update_task_end_time(task.id, datetime.now().isoformat())
                     return
@@ -116,13 +123,13 @@ def scheduler_loop():
                             proc.wait()
                         else:
                             proc.wait(timeout=timeout)
-                    print(f"Task output redirected to: {task.stdout_file}")
-                    print(f"Task error output redirected to: {task.stderr_file}")
+                    logger.info(f"Task output redirected to: {task.stdout_file}")
+                    logger.info(f"Task error output redirected to: {task.stderr_file}")
                     update_task_status(task.id, "completed")
                     update_task_end_time(task.id, datetime.now().isoformat())
-                    print(f"Task {task.id} completed.")
+                    logger.info(f"Task {task.id} completed.")
                 except Exception as e:
-                    print(f"Task execution failed: {e}")
+                    logger.error(f"Task execution failed: {e}")
                     update_task_status(task.id, "failed")
                     update_task_end_time(task.id, datetime.now().isoformat())
             else:
@@ -130,7 +137,7 @@ def scheduler_loop():
                 time.sleep(1)
     finally:
         set_scheduler_status("stopped")
-        print("Scheduler stopped.")
+        logger.info("Scheduler stopped.")
 
 
 def start_scheduler():
@@ -141,7 +148,7 @@ def start_scheduler():
     Runs the scheduling loop in the foreground.
     """
     if get_scheduler_status() == "running":
-        print("Scheduler already running.")
+        logger.info("Scheduler already running.")
         return
     scheduler_loop()
 
@@ -151,10 +158,10 @@ def stop_scheduler():
     Stop the scheduler by setting its status to 'stopped'.
     """
     if get_scheduler_status() != "running":
-        print("Scheduler is not running.")
+        logger.info("Scheduler is not running.")
         return
     set_scheduler_status("stopped")
-    print("Stopping scheduler...")
+    logger.info("Stopping scheduler...")
 
 
 def status_scheduler():
@@ -162,4 +169,4 @@ def status_scheduler():
     Print the current scheduler status.
     """
     status = get_scheduler_status()
-    print(f"Scheduler status: {status}")
+    logger.info(f"Scheduler status: {status}")

@@ -11,10 +11,12 @@ Author: ender
 
 import os
 from datetime import datetime
-from .utils import get_taskq_config_dir
+from .utils import get_taskq_config_dir, setup_logging
 from .models import Task, get_session
+from loguru import logger
 
 DB_PATH = os.path.join(get_taskq_config_dir(), "taskq.db")
+setup_logging()
 
 
 def init_db():
@@ -24,7 +26,9 @@ def init_db():
     This function ensures the database schema is up-to-date.
     """
     # SQLAlchemy自动建表，无需手写DDL
+    logger.info(f"Initializing database at {DB_PATH}")
     get_session(DB_PATH).close()
+    logger.info("Database initialized successfully")
 
 
 def add_task(
@@ -59,6 +63,7 @@ def add_task(
     timeout : int or None
         Timeout in seconds (None or 0 means unlimited).
     """
+    logger.info(f"Adding task: {name}, command: {command}, priority: {priority}")
     session = get_session(DB_PATH)
     task = Task(
         name=name,
@@ -74,6 +79,7 @@ def add_task(
     )
     session.add(task)
     session.commit()
+    logger.info(f"Task added successfully: {task}")
     session.close()
     return task
 
@@ -92,6 +98,7 @@ def get_tasks(status: list = None):
     list of Task
         List of Task ORM objects.
     """
+    logger.info(f"Retrieving tasks with status: {status}")
     session = get_session(DB_PATH)
     q = session.query(Task)
     if status:
@@ -99,6 +106,7 @@ def get_tasks(status: list = None):
     q = q.order_by(Task.priority.asc(), Task.created_at.asc())
     tasks = q.all()
     session.close()
+    logger.info(f"Retrieved {len(tasks)} tasks")
     return tasks
 
 
@@ -116,9 +124,11 @@ def get_task_by_id(task_id: int):
     Task or None
         Task ORM object, or None if not found.
     """
+    logger.info(f"Retrieving task by ID: {task_id}")
     session = get_session(DB_PATH)
     t = session.query(Task).filter(Task.id == task_id).first()
     session.close()
+    logger.info(f"Task retrieved: {t}")
     return t
 
 
@@ -133,6 +143,7 @@ def update_task_status(task_id: int, status: str):
     status : str
         New status ('pending', 'running', 'completed', 'cancelled', 'failed').
     """
+    logger.info(f"Updating status for task ID {task_id} to {status}")
     session = get_session(DB_PATH)
     t = session.query(Task).filter(Task.id == task_id).first()
     if t:
@@ -152,6 +163,7 @@ def update_task_pid(task_id: int, pid: int):
     pid : int
         Process ID to record.
     """
+    logger.info(f"Updating PID for task ID {task_id} to {pid}")
     session = get_session(DB_PATH)
     t = session.query(Task).filter(Task.id == task_id).first()
     if t:
@@ -171,6 +183,7 @@ def update_task_start_time(task_id: int, start_time: str):
     start_time : str
         ISO format datetime string.
     """
+    logger.info(f"Updating start time for task ID {task_id} to {start_time}")
     session = get_session(DB_PATH)
     t = session.query(Task).filter(Task.id == task_id).first()
     if t:
@@ -190,6 +203,7 @@ def update_task_end_time(task_id: int, end_time: str):
     end_time : str
         ISO format datetime string.
     """
+    logger.info(f"Updating end time for task ID {task_id} to {end_time}")
     session = get_session(DB_PATH)
     t = session.query(Task).filter(Task.id == task_id).first()
     if t:

@@ -20,10 +20,15 @@ import argparse
 import signal
 import os
 from .db import init_db, add_task, get_tasks
-from .utils import resolve_path, validate_priority, validate_timeout
+from .utils import resolve_path, validate_priority, validate_timeout, setup_logging
+from loguru import logger
+
+# Initialize logging
+setup_logging()
 
 
 def cmd_init(args):
+    logger.info("Initializing the database.")
     """
     Initialize the task database.
 
@@ -35,7 +40,7 @@ def cmd_init(args):
         Parsed command-line arguments (unused).
     """
     init_db()
-    print("Database initialized.")
+    logger.info("Database initialized successfully.")
 
 
 def cmd_submit(args):
@@ -57,17 +62,17 @@ def cmd_submit(args):
         stdout_file = args.stdout if args.stdout else "stdout.log"
         stderr_file = args.stderr if args.stderr else "stderr.log"
         if not isinstance(stdout_file, str) or not isinstance(stderr_file, str):
-            print("Error: stdout and stderr file paths must be strings.")
+            logger.error("Error: stdout and stderr file paths must be strings.")
             return
         stdout_file = resolve_path(stdout_file, cwd)
         stderr_file = resolve_path(stderr_file, cwd)
         # Validate priority
         if not validate_priority(args.priority):
-            print("Error: priority must be between 0 and 9.")
+            logger.error("Error: priority must be between 0 and 9.")
             return
         # Validate timeout
         if not validate_timeout(args.timeout):
-            print("Error: timeout must be a non-negative integer or None.")
+            logger.error("Error: timeout must be a non-negative integer or None.")
             return
         # Determine task name
         task_name = args.name
@@ -84,9 +89,9 @@ def cmd_submit(args):
             stderr_file=stderr_file,
             timeout=args.timeout,
         )
-        print(f"Task submitted: {task_name} (priority={args.priority})")
+        logger.info(f"Task submitted: {task_name} (priority={args.priority})")
     except Exception as e:
-        print(f"Failed to submit task: {e}")
+        logger.error(f"Failed to submit task: {e}")
 
 
 def cmd_list(args):
@@ -110,8 +115,8 @@ def cmd_list(args):
     if status:
         invalid = [s for s in status if s not in allowed_status]
         if invalid:
-            print(f"Invalid status: {', '.join(invalid)}")
-            print(f"Allowed status: {', '.join(sorted(allowed_status))}")
+            logger.error(f"Invalid status: {', '.join(invalid)}")
+            logger.info(f"Allowed status: {', '.join(sorted(allowed_status))}")
             return
     tasks = get_tasks(status)
     # Table columns: ID, Name, Priority, Date, Time, Status, PID, Duration
@@ -159,10 +164,11 @@ def cmd_list(args):
         ]
         rows.append(row)
     # Print header
-    print(" ".join(h.ljust(w) for h, w in zip(headers, col_widths)))
-    print("-" * (sum(col_widths) + len(col_widths) - 1))
+    logger.info("Listing tasks:")
+    logger.info(" ".join(h.ljust(w) for h, w in zip(headers, col_widths)))
+    logger.info("-" * (sum(col_widths) + len(col_widths) - 1))
     for row in rows:
-        print(" ".join(row))
+        logger.info(" ".join(row))
 
 
 def cmd_cancel(args):
@@ -182,21 +188,21 @@ def cmd_cancel(args):
     init_db()
     task = get_task_by_id(args.id)
     if not task:
-        print(f"Task {args.id} not found.")
+        logger.error(f"Task {args.id} not found.")
         return
     # Use ORM attribute access
     if task.status not in ("pending", "running"):
-        print(f"Task {args.id} cannot be cancelled (status: {task.status}).")
+        logger.error(f"Task {args.id} cannot be cancelled (status: {task.status}).")
         return
     # If running, try to terminate the process
     if task.status == "running" and task.pid:
         try:
             os.kill(task.pid, signal.SIGTERM)
-            print(f"Sent SIGTERM to process {task.pid}.")
+            logger.info(f"Sent SIGTERM to process {task.pid}.")
         except Exception as e:
-            print(f"Failed to terminate process {task.pid}: {e}")
+            logger.error(f"Failed to terminate process {task.pid}: {e}")
     update_task_status(args.id, "cancelled")
-    print(f"Task {args.id} cancelled.")
+    logger.info(f"Task {args.id} cancelled.")
 
 
 def cmd_start(args):
@@ -210,6 +216,7 @@ def cmd_start(args):
     """
     from .scheduler import start_scheduler
 
+    logger.info("Starting the scheduler.")
     start_scheduler()
 
 
@@ -224,6 +231,7 @@ def cmd_stop(args):
     """
     from .scheduler import stop_scheduler
 
+    logger.info("Stopping the scheduler.")
     stop_scheduler()
 
 
@@ -238,6 +246,7 @@ def cmd_status(args):
     """
     from .scheduler import status_scheduler
 
+    logger.info("Querying the scheduler status.")
     status_scheduler()
 
 
