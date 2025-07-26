@@ -76,10 +76,15 @@ def scheduler_loop():
     """
     set_scheduler_status("running")
     logger.info("Scheduler started.")
-    executor = ProcessPoolExecutor(max_workers=5)  # Maximum parallel tasks
+    # Dynamically adjust max_workers based on system load
+    max_workers = 2 if is_system_overloaded() else 5
+    # Initialize sleep_interval for exponential backoff
+    sleep_interval = 2
+    executor = ProcessPoolExecutor(max_workers=max_workers)  # Maximum parallel tasks
     try:
+        # Initialize the database once at the start
+        init_db()
         while get_scheduler_status() == "running":
-            init_db()
             # Select all pending tasks
             pending = get_tasks(status=["pending"])
             if is_system_overloaded():
@@ -94,7 +99,9 @@ def scheduler_loop():
                     time.sleep(10)  # Wait for task initialization
             else:
                 # No pending tasks, sleep before next poll
-                time.sleep(5)
+                # Implement exponential backoff for sleep intervals
+                sleep_interval = min(sleep_interval * 2, 60) if not pending else 5
+                time.sleep(sleep_interval)
     finally:
         executor.shutdown(wait=True)
         set_scheduler_status("stopped")
