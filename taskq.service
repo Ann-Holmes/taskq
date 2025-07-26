@@ -1,0 +1,14 @@
+[Unit]
+Description=TaskQ Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/taskq
+ExecStart=/usr/bin/python3 -m taskq.main start
+Restart=on-failure
+StandardOutput=append:/path/to/taskq/taskq.log
+StandardError=append:/path/to/taskq/taskq.err
+
+[Install]
+WantedBy=multi-user.target

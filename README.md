@@ -38,6 +38,38 @@ uv run taskq list
 taskq init
 ```
 
+### Systemd Integration
+
+To manage TaskQ as a systemd service:
+
+1. Copy the service file to the system directory:
+
+   ```bash
+   sudo cp taskq.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   ```
+
+2. Enable and start the service:
+
+   ```bash
+   sudo systemctl enable taskq
+   sudo systemctl start taskq
+   ```
+
+3. Check the service status:
+
+   ```bash
+   sudo systemctl status taskq
+   ```
+
+4. Stop the service:
+
+   ```bash
+   sudo systemctl stop taskq
+   ```
+
+Logs are stored in `/path/to/taskq/taskq.log` and `/path/to/taskq/taskq.err`.
+
 #### Submit a Task
 
 ```bash
